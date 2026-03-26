@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+
+# Environment
+.env
+.env.local
+
+# Database
+*.db
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/
+.expo/
+
+# Logs
+*.log
+
+# Large media files
+courses/**/*.mp4
+courses/**/*.mov
+courses/**/*.avi
+
+# Worktrees
+.claude/worktrees/
+
+# Assets (keep small ones)
+assets/*.af
+
+# Misc
+nul

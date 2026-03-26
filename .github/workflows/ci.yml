@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: zorbyo_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+      minio:
+        image: minio/minio
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 9000:9000
+          - 9001:9001
+        command: server /data --console-address ":9001"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.17'
+          otp-version: '26'
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Restore Elixir deps cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            backend/deps
+            backend/_build
+          key: ${{ runner.os }}-elixir-${{ hashFiles('backend/mix.exs') }}-${{ hashFiles('backend/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-elixir-
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          mix deps.get
+          mix deps.compile
+
+      - name: Check formatting
+        working-directory: ./backend
+        run: mix format --check-formatted
+
+      - name: Run Credo
+        working-directory: ./backend
+        run: mix credo --strict
+
+      - name: Run Dialyzer
+        working-directory: ./backend
+        run: mix dialyzer --format github
+        continue-on-error: true
+
+      - name: Run backend tests
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/zorbyo_test
+          REDIS_URL: redis://localhost:6379
+          MINIO_ENDPOINT: localhost
+          MINIO_ACCESS_KEY: minioadmin
+          MINIO_SECRET_KEY: minioadmin
+        run: |
+          mix ecto.create
+          mix ecto.migrate
+          mix test
+
+      - name: Check Rust formatting
+        working-directory: ./rust-services/ai-service
+        run: cargo fmt -- --check
+
+      - name: Clippy check (AI service)
+        working-directory: ./rust-services/ai-service
+        run: cargo clippy -- -D warnings
+
+      - name: Check Rust formatting (Payment service)
+        working-directory: ./rust-services/payment-service
+        run: cargo fmt -- --check
+
+      - name: Clippy check (Payment service)
+        working-directory: ./rust-services/payment-service
+        run: cargo clippy -- -D warnings
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Check TypeScript types
+        working-directory: ./frontend
+        run: npm run typecheck
+
+      - name: Run ESLint
+        working-directory: ./frontend
+        run: npx eslint src --ext .ts,.tsx
+
+  frontend-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Run unit tests
+        working-directory: ./frontend
+        run: npm test -- --passWithNoTests
+
+      - name: Verify build
+        working-directory: ./frontend
+        run: npx expo export --platform web --output-dir dist

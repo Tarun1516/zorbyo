@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: zorbyo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zorbyo
+      POSTGRES_PASSWORD: zorbyo_secret
+      POSTGRES_DB: zorbyo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zorbyo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: zorbyo-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MinIO Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: zorbyo-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # MinIO Client - Create bucket on startup
+  minio-client:
+    image: minio/mc:latest
+    container_name: zorbyo-minio-client
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 10;
+      /usr/bin/mc alias set zorbyo http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb zorbyo/zorbyo --ignore-existing;
+      /usr/bin/mc anonymous set download zorbyo/zorbyo;
+      echo 'MinIO bucket created successfully';
+      exit 0;
+      "
+
+  # Jitsi Meet (Simplified - using meet.jit.si for development)
+  # For production, you can set up your own Jitsi instance
+  # This container is optional - the app can use meet.jit.si directly
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
