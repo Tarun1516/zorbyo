@@ -1,6 +1,6 @@
 # ZORBYO
 
-![ZORBYO Logo](assets/Logo-Zorbyo.png)
+![ZORBYO Logo](assets/Logo-zorbyo.png)
 
 A multi-sided platform combining Fiverr, LinkedIn, HackerOne, Unstop, Coursera/Udemy, and Internshala.
 
